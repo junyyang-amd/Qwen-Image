@@ -169,24 +169,6 @@ class UnquantizedLinearMethod(LinearMethodBase):
         # 初始化aiter相关属性
         self._aiter_trans_weight = False
 
-    def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
-        if _is_cpu and _is_cpu_amx_available:
-            _amx_process_weight_after_loading(layer, ["weight"])
-
-        if _use_aiter and get_bool_env_var("SGLANG_ROCM_USE_AITER_LINEAR_SHUFFLE"):
-            AiterHipblaslt._initialize_hipblaslt()
-            layout = (16, 16)
-            weight = layer.weight
-            # if can_shuffle(weight.shape[0], weight.shape[1], layout) and weight.shape[0] != 18992:
-            if AiterHipblaslt.can_shuffle(weight.shape[0], weight.shape[1], layout):
-                shuffled_weight = shuffle_weight(weight, layout).t()
-                self._aiter_trans_weight = False
-            else:
-                shuffled_weight = weight
-                self._aiter_trans_weight = True
-
-            layer.weight = Parameter(shuffled_weight.data, requires_grad=False)
-
 
     def apply(
         self, layer: torch.nn.Module, x: torch.Tensor, bias: torch.Tensor | None = None
@@ -198,6 +180,7 @@ class UnquantizedLinearMethod(LinearMethodBase):
             and get_bool_env_var("SGLANG_ROCM_USE_AITER_LINEAR_SHUFFLE")
             and not self._aiter_trans_weight
         ):
+            AiterHipblaslt._initialize_hipblaslt()
             output = rocm_aiter_swizzle_hipb_unquantized_gemm(x, layer.weight, bias)
         else:
             output = (

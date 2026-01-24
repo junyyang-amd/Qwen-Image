@@ -244,9 +244,9 @@ class AiterHipblaslt:
 
     @staticmethod
     def can_shuffle(n: int, k: int, layout: tuple[int, int]) -> bool:
-            IN, IK = layout
-            BK = IK * 2
-            return (n % IN == 0) and (k % BK == 0)
+        IN, IK = layout
+        BK = IK * 2
+        return (n % IN == 0) and (k % BK == 0)
     
     @staticmethod
     def hip_bpreshuffle_gemm(
@@ -292,10 +292,11 @@ class AiterHipblaslt:
 
    
 def rocm_aiter_swizzle_hipb_unquantized_gemm(
-        x: torch.Tensor,
-        weight: torch.Tensor,
+        x: torch.Tensor,  #[m,k]
+        weight: torch.Tensor,  #[n,k]
         bias: torch.Tensor | None = None,
 ):
+    weight = weight.T
     output = AiterHipblaslt.hip_bpreshuffle_gemm(x, weight, bias=None)
     if bias is not None:
         output = output + bias
