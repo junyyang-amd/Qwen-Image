@@ -1771,7 +1771,10 @@ class Qwen2_5_VLForConditionalGeneration(TextEncoder):
                 param = params_dict[fused_name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
                 loaded_weight = loaded_weight.to(param.dtype)
-                weight_loader(param, loaded_weight, loaded_shard_id=0)
+                if weight_loader == default_weight_loader:
+                    weight_loader(param, loaded_weight)
+                else:
+                    weight_loader(param, loaded_weight, loaded_shard_id=0)
                 loaded_params.add(fused_name)
                 continue
             if "model.visual." in name and ".mlp.up_proj." in name:
@@ -1779,7 +1782,10 @@ class Qwen2_5_VLForConditionalGeneration(TextEncoder):
                 param = params_dict[fused_name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
                 loaded_weight = loaded_weight.to(param.dtype)
-                weight_loader(param, loaded_weight, loaded_shard_id=1)
+                if weight_loader == default_weight_loader:
+                    weight_loader(param, loaded_weight)
+                else:
+                    weight_loader(param, loaded_weight, loaded_shard_id=1)
                 loaded_params.add(fused_name)
                 continue
             try:

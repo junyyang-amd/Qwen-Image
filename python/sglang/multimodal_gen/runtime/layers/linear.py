@@ -166,22 +166,48 @@ class UnquantizedLinearMethod(LinearMethodBase):
         layer.register_parameter("weight", weight)
         set_weight_attrs(weight, extra_weight_attrs)
 
-        # 初始化aiter相关属性
-        self._aiter_trans_weight = False
+    
+    def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        #import pdb; pdb.set_trace()
+        if _is_cpu and _is_cpu_amx_available:
+            _amx_process_weight_after_loading(layer, ["weight"])
+
+        if _use_aiter and get_bool_env_var("SGLANG_ROCM_USE_AITER_LINEAR_SHUFFLE"):
+            AiterHipblaslt._initialize_hipblaslt()
+            layout = (16, 16)
+            weight = layer.weight
+            # if can_shuffle(weight.shape[0], weight.shape[1], layout) and weight.shape[0] != 18992:
+            if AiterHipblaslt.can_shuffle(weight.shape[0], weight.shape[1], layout):
+                shuffled_weight = shuffle_weight(weight, layout).t()
+                self._aiter_trans_weight = False
+            else:
+                shuffled_weight = weight
+                self._aiter_trans_weight = True
+
+            layer.weight = Parameter(shuffled_weight.data, requires_grad=False)
+
+
 
 
     def apply(
         self, layer: torch.nn.Module, x: torch.Tensor, bias: torch.Tensor | None = None
     ) -> torch.Tensor:
-        #print(f'_use_aiter={_use_aiter}, get_bool_env_var("SGLANG_ROCM_USE_AITER_LINEAR_SHUFFLE")={get_bool_env_var("SGLANG_ROCM_USE_AITER_LINEAR_SHUFFLE")}, not self._aiter_trans_weight={not self._aiter_trans_weight}')
-        #import pdb; pdb.set_trace()
+        # 添加torch编译检查  
+        #if torch._dynamo.is_compiling():  
+        #    return F.linear(x, layer.weight, bias) if torch.cuda.is_available() or bias is None else F.linear(x, layer.weight, bias.to(x.dtype))
+        # 确保属性存在  
+        if not hasattr(self, '_aiter_trans_weight'):  
+            self._aiter_trans_weight = True
         if (
             _use_aiter
             and get_bool_env_var("SGLANG_ROCM_USE_AITER_LINEAR_SHUFFLE")
             and not self._aiter_trans_weight
         ):
-            AiterHipblaslt._initialize_hipblaslt()
-            output = rocm_aiter_swizzle_hipb_unquantized_gemm(x, layer.weight, bias)
+            #import pdb; pdb.set_trace()
+            if torch.cuda.is_available() or bias is None:
+                output = rocm_aiter_swizzle_hipb_unquantized_gemm(x, layer.weight, bias)
+            else:
+                output = rocm_aiter_swizzle_hipb_unquantized_gemm(x, layer.weight, bias.to(x.dtype))
         else:
             output = (
                 F.linear(x, layer.weight, bias)
